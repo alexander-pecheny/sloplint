@@ -1,0 +1,7 @@
+- id: sloplint
+  name: sloplint
+  description: Block high-precision slop patterns in staged lines
+  entry: sloplint --staged
+  language: rust
+  pass_filenames: false
+  always_run: true

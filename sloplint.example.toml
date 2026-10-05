@@ -1,0 +1,31 @@
+# Copy to sloplint.toml at the repository root. Every key is optional.
+
+exclude = ["examples/**", "scripts/**"]
+include-tests = false
+
+[limits]
+magic-numbers = 8      # per function; gates by default
+cyclomatic = 15
+cognitive = 20
+function-sloc = 80
+nesting = 4
+params = 6
+if-ladder = 4
+condition-ops = 3
+file-sloc = 1000
+call-depth = 10
+
+[clones]
+min-tokens = 60
+min-lines = 6
+
+[project]
+# max-slop-score = 0.8
+
+# Levels: error (fails the commit), warn (shown with --warnings), off.
+[rules]
+magic-numbers = "error"
+hardcoded-color = "error"
+error-only-printed = "error"
+debug-print = "warn"
+return-staircase = "off"
