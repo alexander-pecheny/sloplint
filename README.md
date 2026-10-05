@@ -14,6 +14,7 @@ sloplint --diff origin/main # only findings on lines changed between a revision 
 sloplint --diff A..B        # only findings on lines changed between two commits, read from B
 sloplint --diff main...HEAD # the same for a branch since it forked from main
 sloplint --warnings         # also print warnings
+sloplint --exclude gen --exclude '*.pb.ts'  # skip files or directories, gitignore-style
 sloplint --format json      # summary and findings
 sloplint --format functions # per-function metrics as TSV
 ```

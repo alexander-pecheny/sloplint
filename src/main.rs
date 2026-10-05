@@ -28,6 +28,8 @@ struct Cli {
     config: Option<PathBuf>,
     #[arg(long, help = "Also analyze test files")]
     include_tests: bool,
+    #[arg(long, value_name = "GLOB", help = "Skip matching files or directories, gitignore-style (repeatable)")]
+    exclude: Vec<String>,
     #[arg(long, help = "Print warnings as well as errors")]
     warnings: bool,
 }
@@ -51,6 +53,11 @@ fn excludes(root: &Path, cfg: &Config) -> Result<ignore::overrides::Override> {
         overrides.add(&format!("!{pat}"))?;
     }
     Ok(overrides.build()?)
+}
+
+fn ignored(overrides: &ignore::overrides::Override, root: &Path, rel: &Path) -> bool {
+    let full = root.join(rel);
+    full.ancestors().take_while(|a| *a != root).any(|a| overrides.matched(a, a != full).is_ignore())
 }
 
 fn excluded_dir(name: &str) -> bool {
@@ -85,7 +92,7 @@ fn from_git(diff: &git::Diff, paths: &[PathBuf], cfg: &Config, cross_file: bool)
         .into_iter()
         .filter(|p| lang::Lang::from_path(p).is_some() && prefixes.iter().any(|pre| p.starts_with(pre)))
         .filter(|p| !p.iter().any(|c| excluded_dir(c.to_str().unwrap_or(""))))
-        .filter(|p| !overrides.matched(diff.root.join(p), false).is_ignore())
+        .filter(|p| !ignored(&overrides, &diff.root, p))
         .collect();
     out.sort();
     Ok(out)
@@ -133,6 +140,7 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
     let mut cfg = Config::load(cli.config.as_deref())?;
     cfg.include_tests |= cli.include_tests;
+    cfg.exclude.extend(cli.exclude.iter().cloned());
     let diff = if cli.staged || cli.diff.is_some() { Some(git::diff(cli.diff.as_deref())?) } else { None };
     let cross_file = ["duplicate-code", "deep-call-chain"].iter().any(|r| cfg.level(r) == Level::Error);
     let mut files: Vec<_> = match &diff {

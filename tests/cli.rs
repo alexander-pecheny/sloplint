@@ -97,3 +97,23 @@ fn commit_ranges_read_the_right_side_of_the_range() {
     let (code, out) = sloplint(&["--diff", "HEAD~1..HEAD~1", "--format", "json"], &dir);
     assert_eq!((code, errors(&out)), (0, vec![]));
 }
+
+#[test]
+fn exclude_skips_globs_and_directories() {
+    let (dir, git) = repo("exclude-repo");
+    std::fs::create_dir_all(dir.join("gen/deep")).unwrap();
+    std::fs::write(dir.join("gen/deep/colors.py"), "def a():\n    return '#ff0000'\n").unwrap();
+    std::fs::write(dir.join("palette.py"), "def b():\n    return '#00ff00'\n").unwrap();
+    git(&["add", "."]);
+    git(&["commit", "-qm", "more"]);
+    let flagged = |args: &[&str]| {
+        let mut files: Vec<String> = errors(&sloplint(&[args, &["--format", "json"]].concat(), &dir).1).into_iter().map(|(f, _)| f).collect();
+        files.sort();
+        files
+    };
+    assert_eq!(flagged(&[]), vec!["colors.py", "old.py", "palette.py"]);
+    assert_eq!(flagged(&["--exclude", "gen", "--exclude", "palette.*"]), vec!["old.py"]);
+    assert_eq!(flagged(&["--exclude", "gen/deep/", "--exclude", "old.py"]), vec!["palette.py"]);
+    assert_eq!(flagged(&["--diff", "HEAD~1..HEAD", "--exclude", "gen"]), vec!["palette.py"]);
+    assert_eq!(flagged(&["--diff", "HEAD~1..HEAD", "--exclude", "**/deep"]), vec!["palette.py"]);
+}
