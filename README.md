@@ -9,14 +9,16 @@ It started as a port of [scb-check](https://github.com/gabeorlanski/scb-check), 
 ```sh
 cargo install --path .
 sloplint                    # whole tree: errors, then a summary line
-sloplint --staged           # only findings that touch staged lines
-sloplint --diff origin/main # only findings that touch lines changed since a revision
+sloplint --staged           # only findings that touch staged lines, read from the index
+sloplint --diff origin/main # only findings on lines changed between a revision and the working tree
+sloplint --diff A..B        # only findings on lines changed between two commits, read from B
+sloplint --diff main...HEAD # the same for a branch since it forked from main
 sloplint --warnings         # also print warnings
 sloplint --format json      # summary and findings
 sloplint --format functions # per-function metrics as TSV
 ```
 
-The exit code is 1 when any error-level finding remains. Test files are skipped unless `--include-tests` is set. So are generated and minified files, data tables, `docs/` and the usual vendor and build directories.
+`--diff` takes anything `git diff` accepts. With a range, sloplint reads the files from its right side, so the working tree does not matter. The exit code is 1 when any error-level finding remains. Test files are skipped unless `--include-tests` is set. So are generated and minified files, data tables, `docs/` and the usual vendor and build directories.
 
 As a [pre-commit](https://pre-commit.com) hook:
 

@@ -14,13 +14,13 @@ use rayon::prelude::*;
 use std::path::{Path, PathBuf};
 
 #[derive(Parser)]
-#[command(about = "Maintainability and slop gate for Python, Rust, Go, JS, TS and Swift")]
+#[command(about = "Maintainability and slop gate for Python, Rust, Go, JS, TS, Swift and PHP")]
 struct Cli {
     #[arg(default_value = ".")]
     paths: Vec<PathBuf>,
     #[arg(long, help = "Gate only findings that touch lines staged for commit")]
     staged: bool,
-    #[arg(long, value_name = "REV", help = "Gate only findings that touch lines changed since REV")]
+    #[arg(long, value_name = "SPEC", help = "Gate only findings that touch lines in `git diff SPEC`: REV, A..B or A...B")]
     diff: Option<String>,
     #[arg(long, value_enum, default_value_t = Format::Text)]
     format: Format,
@@ -45,20 +45,25 @@ const DEFAULT_EXCLUDES: &[&str] = &[
     "__pycache__", "DerivedData", "coverage", ".next", "docs",
 ];
 
-fn discover(paths: &[PathBuf], cfg: &Config) -> Result<Vec<PathBuf>> {
-    let mut overrides = ignore::overrides::OverrideBuilder::new(".");
+fn excludes(root: &Path, cfg: &Config) -> Result<ignore::overrides::Override> {
+    let mut overrides = ignore::overrides::OverrideBuilder::new(root);
     for pat in &cfg.exclude {
         overrides.add(&format!("!{pat}"))?;
     }
-    let overrides = overrides.build()?;
+    Ok(overrides.build()?)
+}
+
+fn excluded_dir(name: &str) -> bool {
+    DEFAULT_EXCLUDES.contains(&name) || name.ends_with(".docc")
+}
+
+fn discover(paths: &[PathBuf], cfg: &Config) -> Result<Vec<PathBuf>> {
+    let overrides = excludes(Path::new("."), cfg)?;
     let mut out = vec![];
     for root in paths {
         let walk = ignore::WalkBuilder::new(root)
             .overrides(overrides.clone())
-            .filter_entry(|e| {
-                let name = e.file_name().to_str().unwrap_or("");
-                !DEFAULT_EXCLUDES.contains(&name) && !name.ends_with(".docc")
-            })
+            .filter_entry(|e| !excluded_dir(e.file_name().to_str().unwrap_or("")))
             .build();
         for entry in walk {
             let entry = entry?;
@@ -72,26 +77,30 @@ fn discover(paths: &[PathBuf], cfg: &Config) -> Result<Vec<PathBuf>> {
     Ok(out)
 }
 
-fn load(path: &Path, include_tests: bool) -> Option<analyze::FileFacts> {
+fn from_git(diff: &git::Diff, paths: &[PathBuf], cfg: &Config, cross_file: bool) -> Result<Vec<PathBuf>> {
+    let overrides = excludes(&diff.root, cfg)?;
+    let prefixes: Vec<PathBuf> = paths.iter().filter_map(|p| std::fs::canonicalize(p).ok()?.strip_prefix(&diff.root).ok().map(Path::to_path_buf)).collect();
+    let candidates = if cross_file { diff.tracked()? } else { diff.changed.keys().cloned().collect() };
+    let mut out: Vec<PathBuf> = candidates
+        .into_iter()
+        .filter(|p| lang::Lang::from_path(p).is_some() && prefixes.iter().any(|pre| p.starts_with(pre)))
+        .filter(|p| !p.iter().any(|c| excluded_dir(c.to_str().unwrap_or(""))))
+        .filter(|p| !overrides.matched(diff.root.join(p), false).is_ignore())
+        .collect();
+    out.sort();
+    Ok(out)
+}
+
+fn load(path: &Path, src: Option<String>, include_tests: bool) -> Option<analyze::FileFacts> {
     let lang = lang::Lang::from_path(path)?;
-    let is_test = lang::is_test_path(path);
-    if is_test && !include_tests {
+    if lang::is_test_path(path) && !include_tests {
         return None;
     }
-    let src = std::fs::read_to_string(path).ok()?;
+    let src = src?;
     if analyze::is_generated(path, &src) {
         return None;
     }
     analyze::analyze(path.to_path_buf(), lang, &src).filter(|f| !analyze::is_data(f))
-}
-
-fn canonical(changed: git::Changed) -> git::Changed {
-    changed.into_iter().filter_map(|(p, r)| Some((std::fs::canonicalize(p).ok()?, r))).collect()
-}
-
-fn touches(changed: &git::Changed, f: &report::Finding) -> bool {
-    let Ok(abs) = std::fs::canonicalize(&f.path) else { return false };
-    changed.get(&abs).is_some_and(|ranges| ranges.iter().any(|&(a, b)| a <= f.end && f.start <= b))
 }
 
 fn print_functions(files: &[analyze::FileFacts]) {
@@ -124,22 +133,29 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
     let mut cfg = Config::load(cli.config.as_deref())?;
     cfg.include_tests |= cli.include_tests;
-    let mut paths = discover(&cli.paths, &cfg)?;
-    let changed = if cli.staged || cli.diff.is_some() { Some(canonical(git::changed_lines(cli.diff.as_deref())?)) } else { None };
+    let diff = if cli.staged || cli.diff.is_some() { Some(git::diff(cli.diff.as_deref())?) } else { None };
     let cross_file = ["duplicate-code", "deep-call-chain"].iter().any(|r| cfg.level(r) == Level::Error);
-    if let (Some(changed), false) = (&changed, cross_file) {
-        paths.retain(|p| std::fs::canonicalize(p).is_ok_and(|p| changed.contains_key(&p)));
-    }
-    let mut files: Vec<_> = paths.par_iter().filter_map(|p| load(p, cfg.include_tests)).collect();
+    let mut files: Vec<_> = match &diff {
+        Some(d) if !matches!(d.source, git::Source::Worktree) => {
+            from_git(d, &cli.paths, &cfg, cross_file)?.par_iter().filter_map(|p| load(p, d.read(p), cfg.include_tests)).collect()
+        }
+        _ => {
+            let mut paths = discover(&cli.paths, &cfg)?;
+            if let (Some(d), false) = (&diff, cross_file) {
+                paths.retain(|p| d.relative(p).is_some_and(|r| d.changed.contains_key(&r)));
+            }
+            paths.par_iter().filter_map(|p| load(p, std::fs::read_to_string(p).ok(), cfg.include_tests)).collect()
+        }
+    };
     let chains = callgraph::chains(&mut files);
     let dups = clones::detect(&files, &cfg.clones);
     let mut findings = report::findings(&files, &dups, &chains, &cfg);
     let summary = report::summarize(&files, &dups, &findings, &cfg);
 
-    if let Some(changed) = &changed {
-        findings.retain(|f| touches(changed, f));
+    if let Some(d) = &diff {
+        findings.retain(|f| d.touches(Path::new(&f.path), f.start, f.end));
     }
-    let over_score = cfg.project.max_slop_score.filter(|&l| changed.is_none() && summary.slop_score > l);
+    let over_score = cfg.project.max_slop_score.filter(|&l| diff.is_none() && summary.slop_score > l);
     let failed = over_score.is_some() || findings.iter().any(|f| f.level == Level::Error);
 
     match cli.format {

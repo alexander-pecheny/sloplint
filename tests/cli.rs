@@ -54,23 +54,46 @@ fn complexity_matches_hand_count() {
     assert_eq!((nested[5], nested[6], nested[7]), ("5", "10", "4"), "cc, cognitive, nesting");
 }
 
-#[test]
-fn staged_mode_gates_only_changed_lines() {
-    let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join("staged-repo");
+fn repo(name: &str) -> (std::path::PathBuf, impl Fn(&[&str])) {
+    let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join(name);
     if dir.exists() {
         std::fs::remove_dir_all(&dir).unwrap();
     }
     std::fs::create_dir_all(&dir).unwrap();
-    let git = |args: &[&str]| assert!(Command::new("git").args(args).current_dir(&dir).output().unwrap().status.success());
-    git(&["init", "-q"]);
+    let d = dir.clone();
+    let git = move |args: &[&str]| assert!(Command::new("git").args(args).current_dir(&d).output().unwrap().status.success(), "git {args:?}");
+    git(&["init", "-q", "-b", "main"]);
     git(&["config", "user.email", "t@t"]);
     git(&["config", "user.name", "t"]);
     std::fs::write(dir.join("old.py"), "def theme():\n    return '#ffffff'\n").unwrap();
     git(&["add", "."]);
     git(&["commit", "-qm", "init"]);
+    (dir, git)
+}
+
+#[test]
+fn staged_mode_reads_the_index_and_gates_only_changed_lines() {
+    let (dir, git) = repo("staged-repo");
     std::fs::write(dir.join("new.py"), "def accent():\n    return '#ff0000'\n").unwrap();
     git(&["add", "new.py"]);
+    std::fs::write(dir.join("new.py"), "def accent():\n    return theme.accent\n").unwrap();
     let (code, out) = sloplint(&["--staged", "--format", "json"], &dir);
     assert_eq!(errors(&out), vec![("new.py".into(), "hardcoded-color".into())]);
     assert_eq!(code, 1);
+}
+
+#[test]
+fn commit_ranges_read_the_right_side_of_the_range() {
+    let (dir, git) = repo("range-repo");
+    std::fs::write(dir.join("new.py"), "def accent():\n    return '#ff0000'\n").unwrap();
+    git(&["add", "new.py"]);
+    git(&["commit", "-qm", "slop"]);
+    git(&["rm", "-q", "new.py"]);
+    for spec in ["HEAD~1..HEAD", "HEAD~1...HEAD", "HEAD~1.."] {
+        let (code, out) = sloplint(&["--diff", spec, "--format", "json"], &dir);
+        assert_eq!(errors(&out), vec![("new.py".into(), "hardcoded-color".into())], "{spec}");
+        assert_eq!(code, 1, "{spec}");
+    }
+    let (code, out) = sloplint(&["--diff", "HEAD~1..HEAD~1", "--format", "json"], &dir);
+    assert_eq!((code, errors(&out)), (0, vec![]));
 }
