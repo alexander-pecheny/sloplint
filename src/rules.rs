@@ -5,7 +5,7 @@ use tree_sitter::Node;
 pub const VERBOSITY_RULES: &[&str] = &["identical-branches", "duplicate-condition", "empty-catch", "nested-ternary"];
 
 const DEBUG_PRINTS: &[&str] = &[
-    "console.log", "console.debug", "println!", "eprintln!", "dbg!", "fmt.Println", "fmt.Printf", "NSLog", "debugPrint", "print",
+    "console.log", "console.debug", "eprintln!", "dbg!", "fmt.Println", "fmt.Printf", "NSLog", "debugPrint", "print",
     "var_dump", "print_r", "dd", "dump",
 ];
 const ERROR_PRINTS: &[&str] = &[
@@ -84,7 +84,8 @@ impl<'t> Rules<'_> {
         }
         let inner = t.trim_matches(|c| c == '"' || c == '\'' || c == '`');
         let hex = inner.starts_with('#') && matches!(inner.len(), 4 | 5 | 7 | 9) && inner[1..].chars().all(|c| c.is_ascii_hexdigit());
-        if is_string && (hex || inner.starts_with("rgb(") || inner.starts_with("rgba(")) {
+        let rgb = (inner.starts_with("rgb(") || inner.starts_with("rgba(")) && inner.ends_with(')') && inner.contains(|c: char| c.is_ascii_digit());
+        if is_string && (hex || rgb) {
             self.hit("hardcoded-color", n, format!("color {t} hard-coded; take it from a theme or palette"));
         }
     }

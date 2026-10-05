@@ -84,34 +84,13 @@ fn subtree_clones(files: &[FileFacts], cfg: &CloneConfig, found: &mut Vec<Duplic
 }
 
 fn token_clones(files: &[FileFacts], cfg: &CloneConfig, found: &mut Vec<Duplicate>) -> Vec<Vec<bool>> {
-    const BASE: u64 = 0x100000001b3;
     let w = cfg.min_tokens;
-    let top = BASE.wrapping_pow(w as u32 - 1);
-    let mut windows: Vec<(u64, u32, u32)> = vec![];
-    for (fi, f) in files.iter().enumerate() {
-        if f.tokens.len() < w {
-            continue;
-        }
-        let mut h: u64 = 0;
-        for (i, t) in f.tokens.iter().enumerate() {
-            if i >= w {
-                h = h.wrapping_sub(f.tokens[i - w].hash.wrapping_mul(top));
-            }
-            h = h.wrapping_mul(BASE).wrapping_add(t.hash);
-            if i + 1 >= w {
-                windows.push((h, fi as u32, (i + 1 - w) as u32));
-            }
-        }
-    }
+    let mut windows = rolling_windows(files, w);
     windows.sort_unstable();
     let mut covered: Vec<Vec<Option<(u32, u32)>>> = files.iter().map(|f| vec![None; f.tokens.len()]).collect();
     for g in windows.chunk_by(|a, b| a.0 == b.0).filter(|g| g.len() > 1) {
         let (_, f0, p0) = g[0];
-        let toks = &files[f0 as usize].tokens[p0 as usize..p0 as usize + w];
-        if toks.last().unwrap().line - toks[0].line + 1 < cfg.min_lines
-            || toks.iter().map(|t| t.hash).collect::<HashSet<_>>().len() < cfg.min_distinct_tokens
-            || toks.iter().filter(|t| t.code).count() * 10 < w * 4
-        {
+        if !is_code_window(&files[f0 as usize].tokens[p0 as usize..p0 as usize + w], cfg) {
             continue;
         }
         for &(_, f, p) in g {
@@ -124,18 +103,9 @@ fn token_clones(files: &[FileFacts], cfg: &CloneConfig, found: &mut Vec<Duplicat
     }
     let mut lines = masks(files);
     for (fi, cov) in covered.iter().enumerate() {
-        let toks = &files[fi].tokens;
-        let mut i = 0;
-        while i < cov.len() {
-            let Some((of, op)) = cov[i] else {
-                i += 1;
-                continue;
-            };
-            let start = i;
-            while i < cov.len() && cov[i].is_some() {
-                i += 1;
-            }
-            let (a, b) = (toks[start].line, toks[i - 1].line);
+        for (start, end, (of, op)) in runs(cov) {
+            let toks = &files[fi].tokens;
+            let (a, b) = (toks[start].line, toks[end].line);
             mark(&mut lines[fi], a, b);
             let other_line = files[of as usize].tokens[op as usize].line;
             let other = Span { file: of as usize, start: other_line, end: other_line + (b - a) };
@@ -143,4 +113,46 @@ fn token_clones(files: &[FileFacts], cfg: &CloneConfig, found: &mut Vec<Duplicat
         }
     }
     lines
+}
+
+fn rolling_windows(files: &[FileFacts], w: usize) -> Vec<(u64, u32, u32)> {
+    const BASE: u64 = 0x100000001b3;
+    let top = BASE.wrapping_pow(w as u32 - 1);
+    let mut windows = vec![];
+    for (fi, f) in files.iter().enumerate().filter(|(_, f)| f.tokens.len() >= w) {
+        let mut h: u64 = 0;
+        for (i, t) in f.tokens.iter().enumerate() {
+            if i >= w {
+                h = h.wrapping_sub(f.tokens[i - w].hash.wrapping_mul(top));
+            }
+            h = h.wrapping_mul(BASE).wrapping_add(t.hash);
+            if i + 1 >= w {
+                windows.push((h, fi as u32, (i + 1 - w) as u32));
+            }
+        }
+    }
+    windows
+}
+
+fn is_code_window(toks: &[crate::analyze::Token], cfg: &CloneConfig) -> bool {
+    toks.last().unwrap().line - toks[0].line + 1 >= cfg.min_lines
+        && toks.iter().map(|t| t.hash).collect::<HashSet<_>>().len() >= cfg.min_distinct_tokens
+        && toks.iter().filter(|t| t.code).count() * 10 >= toks.len() * 4
+}
+
+fn runs<T: Copy>(cov: &[Option<T>]) -> Vec<(usize, usize, T)> {
+    let mut out = vec![];
+    let mut i = 0;
+    while i < cov.len() {
+        let Some(first) = cov[i] else {
+            i += 1;
+            continue;
+        };
+        let start = i;
+        while i < cov.len() && cov[i].is_some() {
+            i += 1;
+        }
+        out.push((start, i - 1, first));
+    }
+    out
 }

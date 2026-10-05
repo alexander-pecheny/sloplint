@@ -20,6 +20,7 @@ pub struct Limits {
 }
 
 impl Default for Limits {
+    // sloplint: ignore[magic-numbers] this table is where the limits get their names
     fn default() -> Self {
         Limits {
             cyclomatic: 15,

@@ -94,6 +94,32 @@ fn touches(changed: &git::Changed, f: &report::Finding) -> bool {
     changed.get(&abs).is_some_and(|ranges| ranges.iter().any(|&(a, b)| a <= f.end && f.start <= b))
 }
 
+fn print_functions(files: &[analyze::FileFacts]) {
+    println!("path\tline\tend\tname\tsloc\tcc\tcog\tnesting\tparams\tladder\tbool_ops\tdepth");
+    for f in files {
+        for u in &f.functions {
+            println!(
+                "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+                f.path.display(), u.start, u.end, u.name, u.sloc, u.cc, u.cog, u.nesting, u.params, u.ladder, u.bool_ops, u.depth
+            );
+        }
+    }
+}
+
+fn print_text(findings: &[report::Finding], s: &report::Summary, over_score: Option<f64>, warnings: bool) {
+    for f in findings.iter().filter(|f| warnings || f.level == Level::Error) {
+        let tag = if f.level == Level::Error { "error" } else { "warn" };
+        println!("{}:{}: {tag}[{}] {}", f.path, f.start, f.rule, f.message);
+    }
+    println!(
+        "\n{} files, {} SLOC, {} functions | slop score {:.2} (p90 function {} SLOC, {:.0} magic numbers/kSLOC) | verbosity {:.3} | erosion {:.3}",
+        s.files, s.sloc, s.functions, s.slop_score, s.fn_sloc_p90, s.magic_numbers_per_ksloc, s.verbosity, s.erosion
+    );
+    if let Some(limit) = over_score {
+        println!("error: slop score {:.2} is above the project limit {limit}", s.slop_score);
+    }
+}
+
 fn main() -> Result<()> {
     let cli = Cli::parse();
     let mut cfg = Config::load(cli.config.as_deref())?;
@@ -117,35 +143,10 @@ fn main() -> Result<()> {
     let failed = over_score.is_some() || findings.iter().any(|f| f.level == Level::Error);
 
     match cli.format {
-        Format::Json => {
-            println!("{}", serde_json::to_string_pretty(&serde_json::json!({ "summary": summary, "findings": findings }))?);
-        }
+        Format::Json => println!("{}", serde_json::to_string_pretty(&serde_json::json!({ "summary": summary, "findings": findings }))?),
         Format::Summary => println!("{}", serde_json::to_string_pretty(&summary)?),
-        Format::Functions => {
-            println!("path\tline\tend\tname\tsloc\tcc\tcog\tnesting\tparams\tladder\tbool_ops\tdepth");
-            for f in &files {
-                for u in &f.functions {
-                    println!(
-                        "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
-                        f.path.display(), u.start, u.end, u.name, u.sloc, u.cc, u.cog, u.nesting, u.params, u.ladder, u.bool_ops, u.depth
-                    );
-                }
-            }
-        }
-        Format::Text => {
-            for f in findings.iter().filter(|f| cli.warnings || f.level == Level::Error) {
-                let tag = if f.level == Level::Error { "error" } else { "warn" };
-                println!("{}:{}: {tag}[{}] {}", f.path, f.start, f.rule, f.message);
-            }
-            println!(
-                "\n{} files, {} SLOC, {} functions | slop score {:.2} (p90 function {} SLOC, {:.0} magic numbers/kSLOC) | verbosity {:.3} | erosion {:.3}",
-                summary.files, summary.sloc, summary.functions, summary.slop_score, summary.fn_sloc_p90,
-                summary.magic_numbers_per_ksloc, summary.verbosity, summary.erosion
-            );
-            if let Some(limit) = over_score {
-                println!("error: slop score {:.2} is above the project limit {limit}", summary.slop_score);
-            }
-        }
+        Format::Functions => print_functions(&files),
+        Format::Text => print_text(&findings, &summary, over_score, cli.warnings),
     }
     std::process::exit(failed as i32);
 }

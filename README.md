@@ -38,7 +38,7 @@ To silence one finding, put `sloplint: ignore[rule-id]` in a comment on the same
 | `magic-numbers` | error | A function with 8 or more unnamed numeric literals in call arguments, arithmetic, collections or assignments |
 | `hardcoded-color` | error | A `#rrggbb` or `rgb(...)` string literal |
 | `error-only-printed` | error | A `catch`/`except`, Go `if err != nil` or Rust `Err(e) =>` branch that only prints the error |
-| `debug-print` | warn | `console.log`, `print`, `fmt.Println`, `println!`, `NSLog`, `var_dump` and similar |
+| `debug-print` | warn | `console.log`, `print`, `fmt.Println`, `eprintln!`, `NSLog`, `var_dump` and similar. Rust's `println!` is left alone, because CLIs use it for output |
 | `decorative-unicode` | warn | Emoji, arrows, box drawing or check marks in strings and comments |
 | `nested-ternary`, `hardcoded-delay`, `broad-except`, `empty-catch` | warn | As named |
 | `identical-branches`, `duplicate-condition` | warn | Branches that cannot differ, or conditions that can never be reached |
@@ -63,7 +63,7 @@ Precision is a rule's hit rate per thousand SLOC in bad repos, divided by the co
 | `hardcoded-color` | 1.00 | 0.92 | 17/29 | 5/29 | 0.12 |
 | `error-only-printed` | 0.96 | 0.89 | 12/29 | 9/29 | 0.04 |
 | all three together | 0.98 | 0.90 | 26/29 | 28/29 | 0.35 |
-| `debug-print` | 0.80 | 0.88 | 21/29 | 17/29 | 0.56 |
+| `debug-print` | 0.83 | 0.88 | 21/29 | 17/29 | 0.56 |
 | `long-function` (>80 SLOC) | 0.66 | 0.52 | 27/29 | 27/29 | 0.88 |
 | `complexity` (CC >15) | 0.60 | 0.50 | 28/29 | 29/29 | 1.77 |
 | `duplicate-code` | 0.48 | 0.61 | 28/29 | 29/29 | 7.4 |
