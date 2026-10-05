@@ -23,8 +23,8 @@ sloplint --format functions # per-function metrics as TSV
 As a [pre-commit](https://pre-commit.com) hook:
 
 ```yaml
-- repo: https://github.com/<you>/sloplint
-  rev: <sha>
+- repo: https://code.pecheny.me/pecheny/sloplint
+  rev: main
   hooks:
     - id: sloplint
 ```
