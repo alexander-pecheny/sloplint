@@ -18,6 +18,9 @@ const CONST_CONTEXTS: &[&str] = &[
     "const_item", "static_item", "const_declaration", "const_spec", "enum_item", "enum_declaration", "enum_assignment",
 ];
 
+const PALETTE_LISTS: &[&str] = &["array", "list", "tuple", "literal_value", "array_expression", "array_literal"];
+const PALETTE_MIN: usize = 3;
+
 pub fn run(root: Node, lang: Lang, src: &str) -> Vec<Hit> {
     let mut r = Rules { lang, spec: lang.spec(), src, hits: vec![] };
     r.walk(root);
@@ -82,12 +85,21 @@ impl<'t> Rules<'_> {
             let place = if is_string { "string" } else { "comment" };
             self.hit("decorative-unicode", n, format!("`{c}` in a {place}"));
         }
-        let inner = t.trim_matches(|c| c == '"' || c == '\'' || c == '`');
-        let hex = inner.starts_with('#') && matches!(inner.len(), 4 | 5 | 7 | 9) && inner[1..].chars().all(|c| c.is_ascii_hexdigit());
-        let rgb = (inner.starts_with("rgb(") || inner.starts_with("rgba(")) && inner.ends_with(')') && inner.contains(|c: char| c.is_ascii_digit());
-        if is_string && (hex || rgb) {
+        if is_string && is_color(t) && !self.in_const(n) && !self.in_palette(n) {
             self.hit("hardcoded-color", n, format!("color {t} hard-coded; take it from a theme or palette"));
         }
+    }
+
+    /// A list literal of nothing but colours is the palette the hint asks for.
+    fn in_palette(&self, n: Node) -> bool {
+        let parent = n.parent().and_then(|p| if p.kind() == "literal_element" { p.parent() } else { Some(p) });
+        let Some(list) = parent.filter(|p| PALETTE_LISTS.contains(&p.kind())) else { return false };
+        let items: Vec<Node> = named_children(list)
+            .into_iter()
+            .filter(|c| !self.spec.comments.contains(&c.kind()))
+            .map(|c| if c.kind() == "literal_element" { c.named_child(0).unwrap_or(c) } else { c })
+            .collect();
+        items.len() >= PALETTE_MIN && items.iter().all(|c| self.spec.strings.contains(&c.kind()) && is_color(text(*c, self.src)))
     }
 
     fn call(&mut self, n: Node, k: &str) {
@@ -114,12 +126,44 @@ impl<'t> Rules<'_> {
             None
         };
         let Some(body) = body else { return };
+        if self.at_boundary(n, body) {
+            return;
+        }
         let stmts = self.statements_or_self(body);
         let prints = |x: &Node| ERROR_PRINTS.iter().any(|p| text(*x, self.src).starts_with(p));
         let drops = |x: &Node| x.kind() == "pass_statement" || (self.is_return(*x) && !text(*x, self.src).contains("err"));
         if stmts.iter().any(prints) && stmts.iter().all(|x| prints(x) || drops(x)) {
             self.hit("error-only-printed", n, "error is printed and dropped; handle it or propagate it".into());
         }
+    }
+
+    /// Whether the error has nowhere further to go, so logging it is the
+    /// handling: a Go function without an `error` result that returns on the
+    /// spot or whose failed call's results die with the `if`, or a TS/JS
+    /// callback or `void` function. Printing and then going on to use a failed
+    /// result, returning from `main` (exit status 0), or returning from an HTTP
+    /// handler without a response are still flagged.
+    fn at_boundary(&self, n: Node<'t>, body: Node<'t>) -> bool {
+        let mut f = n.parent();
+        while let Some(x) = f.filter(|x| !self.spec.functions.contains(&x.kind()) && !self.spec.lambdas.contains(&x.kind())) {
+            f = x.parent();
+        }
+        let Some(f) = f else { return false };
+        let field = |name: &str| f.child_by_field_name(name).map_or("", |x| text(x, self.src));
+        if self.lang == Lang::Go {
+            let returns = self.statements_or_self(body).last().is_some_and(|l| self.is_return(*l));
+            let scoped = n.child_by_field_name("initializer").is_some();
+            let error_result = field("result").split(|c: char| !c.is_alphanumeric() && c != '_').any(|w| w == "error");
+            let handler = field("parameters").contains("http.ResponseWriter");
+            let main = f.kind() == "function_declaration" && field("name") == "main";
+            return !error_result && (returns || scoped) && !(returns && (main || handler));
+        }
+        if self.lang.is_js_like() {
+            let ret = field("return_type").trim_start_matches(':').trim();
+            let callback = ret.is_empty() && f.parent().is_some_and(|p| p.kind() == "arguments");
+            return callback || matches!(ret, "void" | "Promise<void>");
+        }
+        false
     }
 
     fn in_const(&self, n: Node) -> bool {
@@ -253,6 +297,13 @@ impl<'t> Rules<'_> {
             }
         }
     }
+}
+
+fn is_color(t: &str) -> bool {
+    let inner = t.trim_matches(|c| c == '"' || c == '\'' || c == '`');
+    let hex = inner.starts_with('#') && matches!(inner.len(), 4 | 5 | 7 | 9) && inner[1..].chars().all(|c| c.is_ascii_hexdigit());
+    let rgb = (inner.starts_with("rgb(") || inner.starts_with("rgba(")) && inner.ends_with(')') && inner.contains(|c: char| c.is_ascii_digit());
+    hex || rgb
 }
 
 fn contains_kind(n: Node, kind: &str) -> bool {

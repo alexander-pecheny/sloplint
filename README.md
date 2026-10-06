@@ -39,8 +39,8 @@ To silence one finding, put `sloplint: ignore[rule-id]` in a comment on the same
 | Rule | Level | What it flags |
 |---|---|---|
 | `magic-numbers` | error | A function with 8 or more unnamed numeric literals in call arguments, arithmetic, collections or assignments |
-| `hardcoded-color` | error | A `#rrggbb` or `rgb(...)` string literal |
-| `error-only-printed` | error | A `catch`/`except`, Go `if err != nil` or Rust `Err(e) =>` branch that only prints the error |
+| `hardcoded-color` | error | A `#rrggbb` or `rgb(...)` string literal, unless it names a constant or sits in a list of three or more colours (a palette) |
+| `error-only-printed` | error | A `catch`/`except`, Go `if err != nil` or Rust `Err(e) =>` branch that only prints the error. Not flagged where the error has nowhere to go: a Go function with no `error` result that returns at once or scopes the failed call to the `if` (but `main` and HTTP handlers that return are flagged), or a TS/JS callback or `void` function |
 | `debug-print` | warn | `console.log`, `print`, `fmt.Println`, `eprintln!`, `NSLog`, `var_dump` and similar. Rust's `println!` is left alone, because CLIs use it for output |
 | `decorative-unicode` | warn | Emoji, arrows, box drawing or check marks in strings and comments |
 | `nested-ternary`, `hardcoded-delay`, `broad-except`, `empty-catch` | warn | As named |

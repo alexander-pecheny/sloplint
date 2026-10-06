@@ -34,7 +34,7 @@ fn every_language_trips_each_gate_rule() {
             assert!(found.contains(&(file.into(), rule.into())), "{file} should trip {rule}: {found:?}");
         }
     }
-    assert_eq!(found.len(), 21, "{found:?}");
+    assert_eq!(found.len(), 23, "{found:?}");
 }
 
 #[test]

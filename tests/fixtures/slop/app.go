@@ -16,3 +16,19 @@ func load(path string) {
 	}
 	use(data)
 }
+
+func handle(w http.ResponseWriter, r *http.Request) {
+	data, err := read(r.URL.Path)
+	if err != nil {
+		log.Println(err)
+		return
+	}
+	w.Write(data)
+}
+
+func main() {
+	if err := run(); err != nil {
+		fmt.Println(err)
+		return
+	}
+}

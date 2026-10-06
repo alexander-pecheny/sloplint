@@ -9,3 +9,24 @@ func load(path string) ([]byte, error) {
 	}
 	return data, nil
 }
+
+const linkColor = "#0000ff"
+
+var presence = []string{"#1a73e8", "#d93025", "#188038"}
+
+func warm() {
+	go func() {
+		if err := compile(); err != nil {
+			log.Printf("compile: %v", err)
+		}
+	}()
+}
+
+func notify(id int64) {
+	name, err := lookup(id)
+	if err != nil {
+		log.Printf("notify: lookup %d: %v", id, err)
+		return
+	}
+	send(name)
+}
