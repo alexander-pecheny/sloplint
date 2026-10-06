@@ -32,14 +32,14 @@ As a [pre-commit](https://pre-commit.com) hook:
 
 Or as a plain git hook: `printf '#!/bin/sh\nexec sloplint --staged\n' > .git/hooks/pre-commit && chmod +x .git/hooks/pre-commit`.
 
-To silence one finding, put `sloplint: ignore[rule-id]` in a comment on the same line or the line above. A comment above a function covers function-level findings. A bare `sloplint: ignore` silences every rule. Configuration lives in `sloplint.toml`; see `sloplint.example.toml`.
+To silence a finding, put `sloplint: ignore[rule-id]` in a comment on the same line or the line above. A comment on the line above covers the whole statement or declaration that starts there, so one comment above a palette or a function covers every line of it. A bare `sloplint: ignore` silences every rule. Configuration lives in `sloplint.toml`; see `sloplint.example.toml`.
 
 ## Rules
 
 | Rule | Level | What it flags |
 |---|---|---|
 | `magic-numbers` | error | A function with 8 or more unnamed numeric literals in call arguments, arithmetic, collections or assignments |
-| `hardcoded-color` | error | A `#rrggbb` or `rgb(...)` string literal, unless it names a constant or sits in a list of three or more colours (a palette) |
+| `hardcoded-color` | error | A `#rrggbb` or `rgb(...)` string literal |
 | `error-only-printed` | error | A `catch`/`except`, Go `if err != nil` or Rust `Err(e) =>` branch that only prints the error. Not flagged where the error has nowhere to go: a Go function with no `error` result that returns at once or scopes the failed call to the `if` (but `main` and HTTP handlers that return are flagged), or a TS/JS callback or `void` function |
 | `debug-print` | warn | `console.log`, `print`, `fmt.Println`, `eprintln!`, `NSLog`, `var_dump` and similar. Rust's `println!` is left alone, because CLIs use it for output |
 | `decorative-unicode` | warn | Emoji, arrows, box drawing or check marks in strings and comments |
@@ -64,7 +64,7 @@ Precision is a rule's hit rate per thousand SLOC in bad repos, divided by the co
 |---|---|---|---|---|---|
 | `magic-numbers` | 0.97 | 0.87 | 26/29 | 26/29 | 0.19 |
 | `hardcoded-color` | 1.00 | 0.92 | 17/29 | 5/29 | 0.12 |
-| `error-only-printed` | 0.96 | 0.89 | 12/29 | 9/29 | 0.04 |
+| `error-only-printed` | 0.96 | 0.91 | 10/29 | 8/29 | 0.03 |
 | all three together | 0.98 | 0.90 | 26/29 | 28/29 | 0.35 |
 | `debug-print` | 0.83 | 0.88 | 21/29 | 17/29 | 0.56 |
 | `long-function` (>80 SLOC) | 0.66 | 0.52 | 27/29 | 27/29 | 0.88 |

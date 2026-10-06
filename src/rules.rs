@@ -18,9 +18,6 @@ const CONST_CONTEXTS: &[&str] = &[
     "const_item", "static_item", "const_declaration", "const_spec", "enum_item", "enum_declaration", "enum_assignment",
 ];
 
-const PALETTE_LISTS: &[&str] = &["array", "list", "tuple", "literal_value", "array_expression", "array_literal"];
-const PALETTE_MIN: usize = 3;
-
 pub fn run(root: Node, lang: Lang, src: &str) -> Vec<Hit> {
     let mut r = Rules { lang, spec: lang.spec(), src, hits: vec![] };
     r.walk(root);
@@ -85,21 +82,9 @@ impl<'t> Rules<'_> {
             let place = if is_string { "string" } else { "comment" };
             self.hit("decorative-unicode", n, format!("`{c}` in a {place}"));
         }
-        if is_string && is_color(t) && !self.in_const(n) && !self.in_palette(n) {
+        if is_string && is_color(t) {
             self.hit("hardcoded-color", n, format!("color {t} hard-coded; take it from a theme or palette"));
         }
-    }
-
-    /// A list literal of nothing but colours is the palette the hint asks for.
-    fn in_palette(&self, n: Node) -> bool {
-        let parent = n.parent().and_then(|p| if p.kind() == "literal_element" { p.parent() } else { Some(p) });
-        let Some(list) = parent.filter(|p| PALETTE_LISTS.contains(&p.kind())) else { return false };
-        let items: Vec<Node> = named_children(list)
-            .into_iter()
-            .filter(|c| !self.spec.comments.contains(&c.kind()))
-            .map(|c| if c.kind() == "literal_element" { c.named_child(0).unwrap_or(c) } else { c })
-            .collect();
-        items.len() >= PALETTE_MIN && items.iter().all(|c| self.spec.strings.contains(&c.kind()) && is_color(text(*c, self.src)))
     }
 
     fn call(&mut self, n: Node, k: &str) {

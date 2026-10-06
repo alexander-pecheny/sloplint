@@ -1,4 +1,4 @@
-use crate::analyze::{FileFacts, Function};
+use crate::analyze::{FileFacts, Function, Ignore};
 use crate::callgraph::Chain;
 use crate::clones::Duplicates;
 use crate::config::{Config, Level};
@@ -135,10 +135,8 @@ pub fn findings(files: &[FileFacts], dups: &Duplicates, chains: &[Chain], cfg: &
         let msg = format!("{} lines duplicated ({} copies), e.g. {}:{}", d.span.end - d.span.start + 1, d.copies, other.path.display(), d.other.start);
         push("duplicate-code", &files[d.span.file].path.to_string_lossy(), d.span.start, d.span.end, msg);
     }
-    let ignores: BTreeMap<String, &Vec<(u32, Vec<String>)>> = files.iter().map(|f| (f.path.to_string_lossy().into_owned(), &f.ignores)).collect();
-    out.retain(|x| {
-        !ignores[&x.path].iter().any(|(line, rules)| (x.start == *line || x.start == line + 1) && (rules.is_empty() || rules.contains(&x.rule)))
-    });
+    let ignores: BTreeMap<String, &Vec<Ignore>> = files.iter().map(|f| (f.path.to_string_lossy().into_owned(), &f.ignores)).collect();
+    out.retain(|x| !ignores[&x.path].iter().any(|i| i.covers(x.start, &x.rule)));
     out.sort_by(|x, y| (&x.path, x.start, &x.rule).cmp(&(&y.path, y.start, &y.rule)));
     out
 }

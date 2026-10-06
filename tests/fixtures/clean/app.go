@@ -10,9 +10,12 @@ func load(path string) ([]byte, error) {
 	return data, nil
 }
 
-const linkColor = "#0000ff"
-
-var presence = []string{"#1a73e8", "#d93025", "#188038"}
+// sloplint: ignore[hardcoded-color] the palette hosts are told apart by
+var presence = []string{
+	"#1a73e8",
+	"#d93025",
+	"#188038",
+}
 
 func warm() {
 	go func() {

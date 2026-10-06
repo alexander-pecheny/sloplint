@@ -1,4 +1,9 @@
-const presence = ["#1a73e8", "#d93025", "#188038"];
+// sloplint: ignore[hardcoded-color] the palette hosts are told apart by
+const presence = {
+  blue: "#1a73e8",
+  red: "#d93025",
+  green: "#188038",
+};
 
 function watch(source: EventSource): void {
   source.addEventListener("presence", (event) => {

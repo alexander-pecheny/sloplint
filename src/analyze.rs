@@ -47,6 +47,20 @@ pub struct Subtree {
     pub sloc: u32,
 }
 
+/// A `sloplint: ignore` comment. It covers its own line and the whole of the
+/// statement or declaration that starts on the line below it, through `end`.
+pub struct Ignore {
+    pub line: u32,
+    pub end: u32,
+    pub rules: Vec<String>,
+}
+
+impl Ignore {
+    pub fn covers(&self, start: u32, rule: &str) -> bool {
+        (start == self.line || (self.line < start && start <= self.end)) && (self.rules.is_empty() || self.rules.iter().any(|r| r == rule))
+    }
+}
+
 pub struct FileFacts {
     pub path: PathBuf,
     pub lang: Lang,
@@ -56,7 +70,7 @@ pub struct FileFacts {
     pub tokens: Vec<Token>,
     pub subtrees: Vec<Subtree>,
     pub hits: Vec<Hit>,
-    pub ignores: Vec<(u32, Vec<String>)>,
+    pub ignores: Vec<Ignore>,
 }
 
 pub fn is_data(f: &FileFacts) -> bool {
@@ -113,7 +127,7 @@ pub fn analyze(path: PathBuf, lang: Lang, src: &str) -> Option<FileFacts> {
         tokens,
         subtrees,
         hits,
-        ignores: ignores(src),
+        ignores: ignores(root, src),
     })
 }
 
@@ -153,15 +167,24 @@ fn error_bytes(n: Node) -> usize {
     children(n).into_iter().map(error_bytes).sum()
 }
 
-fn ignores(src: &str) -> Vec<(u32, Vec<String>)> {
+fn ignores(root: Node, src: &str) -> Vec<Ignore> {
     src.lines()
         .enumerate()
         .filter_map(|(i, l)| {
             let rest = &l[l.find("sloplint: ignore")? + "sloplint: ignore".len()..];
             let rules = rest.strip_prefix('[').and_then(|r| r.split(']').next()).map_or(vec![], |r| r.split(',').map(|x| x.trim().to_string()).collect());
-            Some((i as u32 + 1, rules))
+            let line = i as u32 + 1;
+            Some(Ignore { line, end: outermost_end(root, line + 1).unwrap_or(line + 1), rules })
         })
         .collect()
+}
+
+/// The last line of the outermost node that starts on `at`.
+fn outermost_end(n: Node, at: u32) -> Option<u32> {
+    if n.parent().is_some() && line(n) == at {
+        return Some(end_line(n));
+    }
+    named_children(n).into_iter().filter(|c| line(*c) <= at && at <= end_line(*c)).find_map(|c| outermost_end(c, at))
 }
 
 fn mark_comments(n: Node, spec: &Spec, lang: Lang, mask: &mut [bool]) {
