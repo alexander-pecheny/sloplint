@@ -68,7 +68,12 @@ pub fn summarize(files: &[FileFacts], dups: &Duplicates, findings: &[Finding], c
             flagged += (cloned || rule_lines[l]) as u64;
         }
     }
-    let magic = files.iter().flat_map(|f| &f.hits).filter(|h| h.rule == "magic-number").count();
+    // A number an ignore comment covers is one the author has vouched for, so
+    // it leaves the score as well as the report.
+    let magic: usize = files
+        .iter()
+        .map(|f| f.hits.iter().filter(|h| h.rule == "magic-number" && !f.ignores.iter().any(|i| i.covers(h.start, "magic-numbers"))).count())
+        .sum();
     s.magic_numbers_per_ksloc = ratio(magic as f64, ksloc);
     s.fn_sloc_p90 = p90(fns.iter().map(|f| f.sloc).collect());
     s.slop_score = (s.fn_sloc_p90 as f64 / 30.0 + s.magic_numbers_per_ksloc.ln_1p() / 40f64.ln_1p()) / 2.0;

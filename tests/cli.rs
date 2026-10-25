@@ -117,3 +117,18 @@ fn exclude_skips_globs_and_directories() {
     assert_eq!(flagged(&["--diff", "HEAD~1..HEAD", "--exclude", "gen"]), vec!["palette.py"]);
     assert_eq!(flagged(&["--diff", "HEAD~1..HEAD", "--exclude", "**/deep"]), vec!["palette.py"]);
 }
+
+#[test]
+fn an_ignored_table_leaves_the_magic_number_count() {
+    let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join("ignored-magic");
+    std::fs::create_dir_all(&dir).unwrap();
+    let table = "var versions = []int{\n\t11, 12, 13, 14, 15,\n}\n";
+    let magic = |src: &str| {
+        std::fs::write(dir.join("t.go"), format!("package t\n\n{src}")).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&sloplint(&["t.go", "--format", "summary"], &dir).1).unwrap();
+        v["magic_numbers_per_ksloc"].as_f64().unwrap()
+    };
+    assert!(magic(table) > 0.0);
+    assert_eq!(magic(&format!("// sloplint: ignore[magic-numbers] these are ids\n{table}")), 0.0);
+    assert_eq!(magic(&format!("// sloplint: ignore[hardcoded-color] not this rule\n{table}")), magic(table));
+}
